@@ -1,6 +1,6 @@
 ---
 name: test-case-gen
-description: Generate textual test cases (markdown tables, not code) for function/method/class/module. Graph-first, low-token. Accepts symbol name, file:line, or file path.
+description: Generate textual test cases (markdown tables, not code) for function/method/class/module. Graph-first, low-token. Invoke on "test cases", "test scenarios", "what should I test for X". Accepts symbol name, file:line, or file path.
 tools: mcp__code-review-graph__semantic_search_nodes_tool, mcp__code-review-graph__get_minimal_context_tool, mcp__code-review-graph__get_impact_radius_tool, mcp__code-review-graph__query_graph_tool, Read, Write, Grep
 ---
 

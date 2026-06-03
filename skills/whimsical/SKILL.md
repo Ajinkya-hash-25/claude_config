@@ -3,13 +3,7 @@ name: whimsical-flow
 description: Generate Whimsical flow diagram from code. Trigger on "flow diagram", "flowchart", "/whimsical-flow", or code range + visualization ask. Token-lean — caveman mode + code-review-graph first.
 ---
 
-# whimsical-flow
-
 Code → Whimsical flowchart. Min tokens.
-
-## Mode
-
-Caveman full ON for all text. Terse. No fluff.
 
 ## Steps
 

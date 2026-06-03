@@ -1,0 +1,23 @@
+# Local / personal overrides
+CLAUDE.local.md
+.claude/settings.local.json
+
+# Secrets
+.env
+.env.*
+*.secret
+credentials.json
+service-account*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+changes.md
+prompt-bench.md
+docs/api/
+docs/test-cases/
+__pycache__/
+**/__pycache__/
+*.pyc

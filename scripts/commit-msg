@@ -1,0 +1,45 @@
+#!/bin/bash
+# Git commit-msg hook — validates conventional commit format
+# Format: type(scope): description
+# Types: feat, fix, refactor, chore, docs, test, perf, style, ci, build
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Skip merge commits and fixup commits
+if echo "$COMMIT_MSG" | grep -qE '^(Merge|Revert|fixup!|squash!)'; then
+    exit 0
+fi
+
+# Skip if first line is empty (amend with no message change)
+FIRST_LINE=$(echo "$COMMIT_MSG" | head -1)
+if [ -z "$FIRST_LINE" ]; then
+    exit 0
+fi
+
+PATTERN='^(feat|fix|refactor|chore|docs|test|perf|style|ci|build)(\(.+\))?: .{1,72}$'
+
+if ! echo "$FIRST_LINE" | grep -qE "$PATTERN"; then
+    echo ""
+    echo "  ❌ Invalid commit message format."
+    echo ""
+    echo "  Expected: type(scope): description"
+    echo "  Got:      $FIRST_LINE"
+    echo ""
+    echo "  Valid types: feat, fix, refactor, chore, docs, test, perf, style, ci, build"
+    echo "  Examples:"
+    echo "    feat(auth): add JWT refresh token support"
+    echo "    fix(payments): null check before transaction commit"
+    echo "    chore: update dependencies"
+    echo ""
+    exit 1
+fi
+
+# Warn if description is too short (< 10 chars after colon)
+DESC=$(echo "$FIRST_LINE" | sed 's/^[^:]*: //')
+if [ ${#DESC} -lt 10 ]; then
+    echo "  ⚠ Commit description is very short: '$DESC'"
+    echo "  Consider being more descriptive."
+fi
+
+exit 0

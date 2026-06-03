@@ -1,0 +1,31 @@
+#!/bin/bash
+# Git pre-push hook - calls org pr-review.sh
+# Installed by install-git-hooks.sh
+
+set -e
+
+HOOK_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+    RESOLVED="$(readlink -f "$HOOK_PATH" 2>/dev/null || true)"
+    if [ -n "$RESOLVED" ]; then
+        HOOK_PATH="$RESOLVED"
+    fi
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "$HOOK_PATH")" && pwd)"
+REVIEW_SCRIPT=""
+
+if [ -f "$SCRIPT_DIR/pr-review.sh" ]; then
+    REVIEW_SCRIPT="$SCRIPT_DIR/pr-review.sh"
+elif [ -f "$SCRIPT_DIR/../scripts/pr-review.sh" ]; then
+    REVIEW_SCRIPT="$SCRIPT_DIR/../scripts/pr-review.sh"
+elif [ -f "scripts/pr-review.sh" ]; then
+    REVIEW_SCRIPT="$PWD/scripts/pr-review.sh"
+elif [ -f "$HOME/org-claude-config/scripts/pr-review.sh" ]; then
+    REVIEW_SCRIPT="$HOME/org-claude-config/scripts/pr-review.sh"
+else
+    echo "WARN: pr-review.sh not found; skipping review."
+    exit 0
+fi
+
+bash "$REVIEW_SCRIPT"
