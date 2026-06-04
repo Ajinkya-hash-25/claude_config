@@ -17,6 +17,15 @@ if [ "$MODE" = "off" ]; then
     exit 0
 fi
 
+if [ -t 2 ]; then
+    read -r -p "Run PR review? [Y/n] " _REPLY < /dev/tty || true
+    _REPLY="${_REPLY:-Y}"
+    if [[ "$_REPLY" =~ ^[Nn] ]]; then
+        echo "PR review skipped. Pushing."
+        exit 0
+    fi
+fi
+
 pick_base() {
     if [ "${1:-}" != "" ]; then
         echo "$1"
