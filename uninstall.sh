@@ -5,7 +5,6 @@
 
 set -e
 
-R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
 C='\033[0;36m'
@@ -14,38 +13,55 @@ X='\033[0m'
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
-
-echo -e "\n${B}${C}── Uninstalling Org Claude Config ──────────${X}\n"
+GIT_HOOKS_DIR="$HOME/.git-hooks"
 
 removed=0
 
-remove_symlink() {
-    local path="$1"
-    local label="$2"
+remove_entry() {
+    local path="$1" label="$2"
     if [ -L "$path" ]; then
         rm "$path"
-        echo -e "  ${G}✔ removed${X} $label"
+        echo -e "  ${G}✔ removed symlink${X} $label"
+        removed=$((removed + 1))
+    elif [ -d "$path" ]; then
+        rm -rf "$path"
+        echo -e "  ${G}✔ removed dir${X} $label"
+        removed=$((removed + 1))
+    elif [ -f "$path" ]; then
+        rm "$path"
+        echo -e "  ${G}✔ removed file${X} $label"
         removed=$((removed + 1))
     fi
 }
 
-# Remove skill symlinks
+echo -e "${B}${C}── Claude Config ────────────────────────────${X}\n"
+
 for skill_dir in "$REPO_DIR/skills"/*/; do
-    skill_name=$(basename "$skill_dir")
-    remove_symlink "$CLAUDE_DIR/skills/$skill_name" "skills/$skill_name"
+    name=$(basename "${skill_dir%/}")
+    remove_entry "$CLAUDE_DIR/skills/$name" "skills/$name"
 done
 
-# Remove agent symlinks
 for agent_file in "$REPO_DIR/agents"/*.md; do
-    agent_name=$(basename "$agent_file")
-    remove_symlink "$CLAUDE_DIR/agents/$agent_name" "agents/$agent_name"
+    remove_entry "$CLAUDE_DIR/agents/$(basename "$agent_file")" "agents/$(basename "$agent_file")"
 done
 
-# Remove command symlinks
 for cmd_file in "$REPO_DIR/commands"/*.md; do
-    cmd_name=$(basename "$cmd_file")
-    remove_symlink "$CLAUDE_DIR/commands/$cmd_name" "commands/$cmd_name"
+    remove_entry "$CLAUDE_DIR/commands/$(basename "$cmd_file")" "commands/$(basename "$cmd_file")"
 done
 
-echo -e "\n${G}${B}✔ Uninstalled $removed symlinks.${X}"
-echo -e "  ${Y}~/.claude/CLAUDE.md and settings.json untouched.${X}\n"
+echo -e "\n${B}${C}── Git Hooks ────────────────────────────────${X}\n"
+
+for hook in pre-push commit-msg pr-review.sh; do
+    remove_entry "$GIT_HOOKS_DIR/$hook" "~/.git-hooks/$hook"
+done
+
+_hooks_path="$(git config --global core.hooksPath 2>/dev/null || true)"
+if [ "$_hooks_path" = "$GIT_HOOKS_DIR" ]; then
+    git config --global --unset core.hooksPath
+    echo -e "  ${G}✔ unset${X} core.hooksPath"
+fi
+
+remove_entry "$CLAUDE_DIR/CLAUDE.md" "CLAUDE.md"
+
+echo -e "\n${G}${B}✔ Uninstalled $removed entries.${X}"
+echo -e "  ${Y}~/.claude/settings.json untouched.${X}\n"

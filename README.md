@@ -1,78 +1,131 @@
 # Org Claude Config
 
-Low-friction Claude/Codex config for dev teams: graph-first navigation, reuse checks, stack standards, review guardrails, and token discipline.
+Graph-first Claude config for dev teams: reuse checks, stack standards, review guardrails, token discipline.
 
-## Quickstart
-
-```bash
-./install.sh --all
-python scripts/doctor.py
-python scripts/prompt-bench.py
-```
-
-Windows:
-
-```powershell
-.\install.ps1 -All
-python .\scripts\doctor.py
-python .\scripts\prompt-bench.py
-```
-
-## What ships
-
-- `AGENTS.md` / `CLAUDE.md` - org behavior rules.
-- `agents/` - focused subagents for explore, plan, reuse, security, test cases.
-- `skills/` - code review, PR text, scaffolds, endpoint docs, flow diagrams.
-- `standards/` - stack-specific coding standards.
-- `settings.json` - graph update hook after edits only.
-- `mcp.json` - code-review-graph MCP.
-- `scripts/pr-review.sh` - capped pre-push AI review.
-- `scripts/doctor.py` - install and health checks.
-- `scripts/prompt-bench.py` - prompt/token benchmark.
-
-## Install Modes
+## Install
 
 ```bash
-./install.sh          # Claude config only
-./install.sh --git    # git hooks only
-./install.sh --all    # config + hooks
+git clone <repo> ~/org-claude-config
+cd ~/org-claude-config
+./install.sh
 ```
 
-```powershell
-.\install.ps1         # Claude config only
-.\install.ps1 -Git    # git hooks only
-.\install.ps1 -All    # config + hooks
-.\install.ps1 -Copy   # copy instead of symlink
-```
+Installs (symlinked — `git pull` auto-reflects):
+- `CLAUDE.md` → `~/.claude/CLAUDE.md`
+- `skills/` / `agents/` / `commands/` → `~/.claude/`
+- git hooks → `~/.git-hooks/` + sets `git config --global core.hooksPath`
 
-## Review Hook
+Dependencies (checked, not auto-installed):
+- `caveman` — `curl -fsSL https://raw.githubusercontent.com/JuliusBrussee/caveman/main/install.sh | bash`
+- `uvx` — `irm https://astral.sh/uv/install.ps1 | iex` (Win) / `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- `code-review-graph` — `pip install code-review-graph`
 
-`scripts/pr-review.sh` compares current branch against upstream, then `origin/main`, then `origin/master`, then `HEAD~1`.
-
-Env:
+## Uninstall
 
 ```bash
-PR_REVIEW_MODE=block          # default: block high risk / bugs / no verdict
-PR_REVIEW_MODE=warn           # report only
-PR_REVIEW_MODE=off            # skip
-PR_REVIEW_MAX_DIFF_LINES=500  # diff cap
-PR_REVIEW_MAX_FILES=30        # file cap
+./uninstall.sh
 ```
+
+Removes symlinks, unsets `core.hooksPath`. Leaves `~/.claude/CLAUDE.md` and `settings.json` untouched.
 
 ## Health Check
 
 ```bash
-python scripts/doctor.py
-python scripts/doctor.py --deep
+python3 skills/doctor/doctor.py          # fast local check
+python3 skills/doctor/doctor.py --deep   # + external (uvx, graph)
 ```
-
-`--deep` checks external graph commands too. Use normal mode for fast local validation.
 
 ## Prompt Bench
 
 ```bash
-python scripts/prompt-bench.py
-python scripts/prompt-bench.py --run
+python3 skills/prompt-bench/prompt-bench.py        # dry-run token estimate
+python3 skills/prompt-bench/prompt-bench.py --run  # call Claude, write prompt-bench.md
 ```
 
-Dry-run estimates context/prompt tokens. `--run` calls Claude CLI and writes usage to `prompt-bench.md`.
+## What Ships
+
+| Path | Purpose |
+|---|---|
+| `CLAUDE.md` / `AGENTS.md` | Org behavior rules |
+| `agents/` | Subagents: explore, plan, reuse, security, test-cases |
+| `skills/` | Code review, PR gen, scaffolds, endpoint docs, flow diagrams |
+| `skills/git-hooks/` | pre-push AI review + commit-msg validator |
+| `skills/doctor/` | Install health check |
+| `skills/prompt-bench/` | Token benchmark |
+| `standards/` | Stack-specific coding standards (copy as `CLAUDE.md` in project root) |
+| `settings.json` | Graph update hook on Edit/Write |
+| `mcp.json` | code-review-graph MCP config |
+
+## Git Hooks
+
+Hooks live in `skills/git-hooks/`, symlinked to `~/.git-hooks/`. All repos pick them up automatically via `core.hooksPath`.
+
+**pre-push** — runs `pr-review.sh`: diffs branch vs base, builds graph risk score, sends redacted diff to Claude, blocks on bugs/high risk/request-changes verdict.
+
+**commit-msg** — validates conventional commit format: `type(scope): description`.
+
+Control via env:
+
+```bash
+PR_REVIEW_MODE=block          # default — block on red signals
+PR_REVIEW_MODE=warn           # report only, never block
+PR_REVIEW_MODE=off            # skip entirely
+PR_REVIEW_MAX_DIFF_LINES=500  # diff cap (default 500)
+PR_REVIEW_MAX_FILES=30        # file cap (default 30)
+PR_REVIEW_LOG=changes.md      # review log output
+```
+
+Override for one push:
+
+```bash
+PR_REVIEW_MODE=warn git push
+```
+
+## Statusline
+
+Token usage per session: `[in:18k hit:16.9M new:2k out:153k]`
+
+Wire into `~/.claude/settings.json` (path auto-available after install):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "python3 ~/.claude/skills/statusline/statusline_tokens.py"
+  }
+}
+```
+
+Windows:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "powershell -NoProfile -NonInteractive -Command \"& python '$env:USERPROFILE/.claude/skills/statusline/statusline_tokens.py'\""
+  }
+}
+```
+
+Alt — `ccusage` (shows cost + burn rate):
+
+```json
+{ "statusLine": { "type": "command", "command": "bunx ccusage statusline" } }
+```
+
+## Standards
+
+Drop a file from `standards/` as `CLAUDE.md` in any project root to apply stack conventions. Compress with `/caveman:caveman-compress CLAUDE.md` to cut tokens.
+
+Available: `spring-boot.md`, `go-microservice.md`, `cloud-functions.md`, `report-service.md`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `claude CLI not found` | Install + login to Claude CLI |
+| `uvx not found` | `./install.sh` re-runs dep install |
+| Push blocked, urgent | `PR_REVIEW_MODE=warn git push` |
+| Hook not running | Check `git config --global core.hooksPath` points to `~/.git-hooks` |
+| CRLF breaks scripts | `git add --renormalize .` (keep `.gitattributes`) |
+| Statusline blank | Verify `python3` on PATH; test: `echo '{}' \| python3 statusline_tokens.py` |

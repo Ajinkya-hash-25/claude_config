@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def run(cmd: list[str], timeout: int = 10) -> tuple[int, str]:
@@ -68,10 +68,7 @@ def main() -> int:
         if found:
             if name == "bash":
                 code, out = run([found, "--version"], timeout=5)
-                if code == 0:
-                    checks.append(ok(name, found))
-                else:
-                    checks.append(warn(name, f"found but unusable: {out[:120]}"))
+                checks.append(ok(name, found) if code == 0 else warn(name, f"found but unusable: {out[:120]}"))
             else:
                 checks.append(ok(name, found))
         elif name in {"claude", "uvx", "bash", "python3"}:
@@ -97,7 +94,7 @@ def main() -> int:
     else:
         checks.append(fail(".gitattributes", "missing '*.sh text eol=lf'"))
 
-    for rel in ("scripts/pre-push", "scripts/pr-review.sh", "install.sh", "uninstall.sh"):
+    for rel in ("skills/git-hooks/pre-push", "skills/git-hooks/pr-review.sh", "install.sh", "uninstall.sh"):
         path = ROOT / rel
         if not path.exists():
             checks.append(fail(rel, "missing"))
@@ -105,9 +102,6 @@ def main() -> int:
             checks.append(fail(rel, "CRLF line endings"))
         else:
             checks.append(ok(rel, "LF line endings"))
-
-    if (ROOT / "scripts/pre-push").exists() and (ROOT / "scripts/pr-review.sh").exists():
-        checks.append(ok("pre-push path", "repo scripts present"))
 
     if args.deep:
         code, out = run(["git", "rev-parse", "--is-inside-work-tree"])
