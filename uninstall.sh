@@ -1,7 +1,7 @@
 #!/bin/bash
 # Org Claude Config — Uninstall Script
 # Removes symlinks created by install.sh
-# Does NOT touch ~/.claude/CLAUDE.md or ~/.claude/settings.json
+# Removes all symlinks and .bak files created by install.sh
 
 set -e
 
@@ -51,7 +51,7 @@ done
 
 echo -e "\n${B}${C}── Git Hooks ────────────────────────────────${X}\n"
 
-for hook in pre-push commit-msg pr-review.sh; do
+for hook in pre-push pr-review.sh; do
     remove_entry "$GIT_HOOKS_DIR/$hook" "~/.git-hooks/$hook"
 done
 
@@ -62,6 +62,15 @@ if [ "$_hooks_path" = "$GIT_HOOKS_DIR" ]; then
 fi
 
 remove_entry "$CLAUDE_DIR/CLAUDE.md" "CLAUDE.md"
+remove_entry "$CLAUDE_DIR/settings.json" "settings.json"
 
-echo -e "\n${G}${B}✔ Uninstalled $removed entries.${X}"
-echo -e "  ${Y}~/.claude/settings.json untouched.${X}\n"
+for std_file in "$REPO_DIR/standards"/*.md; do
+    remove_entry "$CLAUDE_DIR/standards/$(basename "$std_file")" "standards/$(basename "$std_file")"
+done
+
+echo -e "\n  ${B}Cleaning up .bak files:${X}"
+for bak in "$CLAUDE_DIR/CLAUDE.md.bak" "$CLAUDE_DIR/settings.json.bak"; do
+    [ -f "$bak" ] && rm "$bak" && echo -e "  ${G}✔ removed${X} $(basename "$bak")" || true
+done
+
+echo -e "\n${G}${B}✔ Uninstalled $removed entries.${X}\n"

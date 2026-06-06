@@ -94,6 +94,36 @@ if [ "$CHANGED" = "" ]; then
     exit 0
 fi
 
+# Filter out files that should never be reviewed:
+# - gitignored files that are tracked (lock files, generated assets, etc.)
+# - known secret/credential file patterns
+# - dependency trees
+CHANGED="$(echo "$CHANGED" | grep -vE \
+    -e '^node_modules/' \
+    -e '^vendor/' \
+    -e '^\.yarn/' \
+    -e '^dist/' \
+    -e '^build/' \
+    -e '^\.next/' \
+    -e '^coverage/' \
+    -e 'package-lock\.json$' \
+    -e 'yarn\.lock$' \
+    -e 'pnpm-lock\.yaml$' \
+    -e 'go\.sum$' \
+    -e 'Gemfile\.lock$' \
+    -e 'composer\.lock$' \
+    -e '\.min\.(js|css)$' \
+    -e '\.(pem|key|p12|pfx|cer|crt)$' \
+    -e '(^|/)credentials\.json$' \
+    -e '(^|/)service-account.*\.json$' \
+    -e '(^|\.)env(\.|$)' \
+    || true)"
+
+if [ "$CHANGED" = "" ]; then
+    echo -e "${G}No reviewable changes after filtering noise/secret files.${X}\n"
+    exit 0
+fi
+
 FILE_COUNT="$(echo "$CHANGED" | sed '/^$/d' | wc -l | tr -d ' ')"
 if [ "$FILE_COUNT" -gt "$MAX_FILES" ]; then
     echo -e "${Y}Changed files: $FILE_COUNT. Reviewing first $MAX_FILES by diff order.${X}"
@@ -101,51 +131,25 @@ if [ "$FILE_COUNT" -gt "$MAX_FILES" ]; then
 fi
 
 BLOCK=0
-RISK="unknown"
-
-section_head "RISK ANALYSIS"
-if command -v uvx >/dev/null 2>&1 && uvx code-review-graph --version >/dev/null 2>&1; then
-    echo -e "${Y}Updating graph...${X}"
-    uvx code-review-graph build --repo . >/dev/null 2>&1 || true
-    GRAPH="$(uvx code-review-graph detect-changes --base "$BASE" 2>&1 || true)"
-    RISK="$(echo "$GRAPH" | json_field "risk_score")"
-    RISK="${RISK:-unknown}"
-    echo -e "Risk score: $RISK"
-    if awk "BEGIN{exit !(\"$RISK\"+0 >= 0.7)}" 2>/dev/null; then
-        echo -e "${R}High risk score: $RISK${X}"
-        BLOCK=1
-    fi
-else
-    echo -e "${Y}uvx code-review-graph not found; skipping risk.${X}"
-    GRAPH="Not available."
-fi
 
 section_head "CLAUDE REVIEW"
 
 DIFF="$(
-    git diff "$BASE"...HEAD --no-ext-diff --unified=80 -- $CHANGED 2>/dev/null \
+    git diff "$BASE"...HEAD --no-ext-diff --unified=3 -- $CHANGED 2>/dev/null \
         | redact_secrets \
         | truncate_lines "$MAX_DIFF_LINES"
 )"
 
-CONTEXT="$(cat <<CTXEOF
-=== GRAPH ANALYSIS ===
-$GRAPH
-
-=== GIT DIFF (redacted, capped at $MAX_DIFF_LINES lines) ===
-$DIFF
-CTXEOF
-)"
-
 PROMPT="$(cat <<'PROMPTEOF'
-Review ONLY changed lines. Output terse actionable findings.
-Format: file:Lline: severity: problem. fix.
-Severity: bug, risk, nit, q.
-Security findings: explain enough to act safely.
-End with exactly:
-APPROVE
-or
-REQUEST CHANGES - one line why.
+You are a code reviewer. Caveman mode: terse fragments, no filler.
+Diff below. List ONLY lines that must be fixed before merge.
+Skip style, skip praise, skip explanation of what code does.
+
+Format (one line per issue):
+file:LINE: [bug|risk|sec]: what breaks. how to fix.
+
+If nothing to fix, output exactly: APPROVE
+Else output findings then exactly: REQUEST CHANGES
 PROMPTEOF
 )"
 
@@ -155,7 +159,7 @@ if ! command -v claude >/dev/null 2>&1; then
     TOKENS_IN="?"
     TOKENS_OUT="?"
 else
-    RESULT="$(printf '%s' "$CONTEXT" | claude -p "$PROMPT" --output-format json --allowedTools none 2>&1 || true)"
+    RESULT="$(printf '%s' "$DIFF" | claude -p "$PROMPT" --output-format json --allowedTools none --model claude-haiku-4-5-20251001 2>&1 || true)"
     REVIEW="$(echo "$RESULT" | json_field "result")"
     TOKENS_IN="$(echo "$RESULT" | json_field "usage.input_tokens")"
     TOKENS_OUT="$(echo "$RESULT" | json_field "usage.output_tokens")"
@@ -174,9 +178,7 @@ cat >> "$CHANGES_FILE" <<MDEOF
 
 ## PR Review - $TIMESTAMP
 **Branch:** \`$BRANCH\` -> \`$BASE\`
-**Risk Score:** ${RISK}
 **Tokens:** in=${TOKENS_IN} out=${TOKENS_OUT}
-**Diff cap:** ${MAX_DIFF_LINES} lines
 
 ### Changed Files
 \`\`\`
@@ -209,9 +211,23 @@ if [ "$MODE" = "warn" ]; then
 fi
 
 if [ "$BLOCK" -eq 1 ]; then
-    echo -e "${R}Push blocked. Fix issues or set PR_REVIEW_MODE=warn/off.${X}"
+    echo -e "${R}Push blocked.${X}"
+else
+    echo -e "${G}Approved.${X}"
+fi
+
+if [ -t 2 ]; then
+    read -r -p "$(echo -e "Push anyway? [y/N] ")" _FORCE < /dev/tty || true
+    if [[ "${_FORCE:-N}" =~ ^[yY] ]]; then
+        echo -e "${Y}Force push confirmed — pushing.${X}"
+        exit 0
+    fi
+fi
+
+if [ "$BLOCK" -eq 1 ]; then
+    echo -e "${R}Aborted. Fix issues or set PR_REVIEW_MODE=warn/off.${X}"
     exit 1
 fi
 
-echo -e "${G}Approved - pushing.${X}"
+echo -e "${G}Pushing.${X}"
 exit 0

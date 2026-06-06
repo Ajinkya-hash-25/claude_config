@@ -35,7 +35,15 @@ symlink_files() {
         [ -e "$f" ] || continue
         name=$(basename "$f")
         target="$dest_dir/$name"
-        [ -L "$target" ] && rm "$target"
+        if [ -L "$target" ]; then
+            rm "$target"
+        elif [ -e "$target" ]; then
+            read -r -p "  ${Y}⚠${X} $label/$name exists. Overwrite? [y/N] " _reply < /dev/tty || true
+            case "${_reply:-N}" in
+                [yY]) rm "$target" ;;
+                *) echo -e "  ${Y}skip${X} $label/$name — not modified"; continue ;;
+            esac
+        fi
         ln -sf "$f" "$target"
         echo -e "  ${G}✔${X} $label/$name"
     done
@@ -43,10 +51,15 @@ symlink_files() {
 
 force_symlink() {
     local src="$1" target="$2" label="$3"
-    if [ -L "$target" ]; then rm "$target"
+    if [ -L "$target" ]; then
+        rm "$target"
     elif [ -e "$target" ]; then
-        mv "$target" "${target}.bak"
-        echo -e "  ${Y}↩${X} backed up existing → ${label}.bak"
+        read -r -p "  ${Y}⚠${X} $label already exists. Overwrite? [y/N] " reply < /dev/tty || true
+        case "${reply:-N}" in
+            [yY]) mv "$target" "${target}.bak"
+                  echo -e "  ${Y}↩${X} backed up existing → ${label}.bak" ;;
+            *) echo -e "  ${Y}skip${X} $label — not modified"; return ;;
+        esac
     fi
     ln -sf "$src" "$target"
     echo -e "  ${G}✔${X} symlinked $label"
@@ -62,11 +75,12 @@ print_deps() {
 
 install_claude() {
     echo -e "${B}${C}── Claude Config (~/.claude/) ──────────────${X}"
-    mkdir -p "$CLAUDE_DIR/skills" "$CLAUDE_DIR/agents" "$CLAUDE_DIR/commands"
+    mkdir -p "$CLAUDE_DIR/skills" "$CLAUDE_DIR/agents" "$CLAUDE_DIR/commands" "$CLAUDE_DIR/standards"
 
-    symlink_dir  "$REPO_DIR/skills"    "$CLAUDE_DIR/skills"   "skills"
-    symlink_files "$REPO_DIR/agents"   "$CLAUDE_DIR/agents"   "agents"   "*.md"
-    symlink_files "$REPO_DIR/commands" "$CLAUDE_DIR/commands" "commands" "*.md"
+    symlink_dir   "$REPO_DIR/skills"     "$CLAUDE_DIR/skills"     "skills"
+    symlink_files "$REPO_DIR/agents"     "$CLAUDE_DIR/agents"     "agents"    "*.md"
+    symlink_files "$REPO_DIR/commands"   "$CLAUDE_DIR/commands"   "commands"  "*.md"
+    symlink_files "$REPO_DIR/standards"  "$CLAUDE_DIR/standards"  "standards" "*.md"
 
     echo -e "\n  ${B}CLAUDE.md:${X}"
     force_symlink "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md" "CLAUDE.md"
@@ -83,7 +97,7 @@ install_git_hooks() {
     mkdir -p "$GIT_HOOKS_DIR"
     git config --global core.hooksPath "$GIT_HOOKS_DIR"
 
-    for hook in pre-push commit-msg pr-review.sh; do
+    for hook in pre-push pr-review.sh; do
         src="$REPO_DIR/skills/git-hooks/$hook"
         target="$GIT_HOOKS_DIR/$hook"
         if [ ! -f "$src" ]; then
