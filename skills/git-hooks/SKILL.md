@@ -8,7 +8,7 @@ All repos pick them up automatically via `git config --global core.hooksPath ~/.
 
 - `pre-push` — runs `pr-review.sh` on every push
 - `commit-msg` — validates conventional commit format
-- `pr-review.sh` — Claude AI review + code-review-graph risk score
+- `pr-review.sh` — Claude AI review (Haiku); blocks on `bug:` findings or `REQUEST CHANGES` verdict
 
 Control via env vars:
 - `PR_REVIEW_MODE=warn` — never block, print findings only

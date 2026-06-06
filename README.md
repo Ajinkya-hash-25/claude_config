@@ -60,7 +60,7 @@ python3 skills/prompt-bench/prompt-bench.py --run  # call Claude, write prompt-b
 
 Hooks live in `skills/git-hooks/`, symlinked to `~/.git-hooks/`. All repos pick them up automatically via `core.hooksPath`.
 
-**pre-push** — runs `pr-review.sh`: diffs branch vs base, builds graph risk score, sends redacted diff to Claude, blocks on bugs/high risk/request-changes verdict.
+**pre-push** — runs `pr-review.sh`: diffs branch vs base, redacts secrets, sends diff to Claude (Haiku), blocks on `bug:` findings or `REQUEST CHANGES` verdict. Shows spinner while reviewing; prompts "Push anyway?" only when blocked.
 
 **commit-msg** — validates conventional commit format: `type(scope): description`.
 
