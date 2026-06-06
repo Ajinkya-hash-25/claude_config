@@ -85,6 +85,25 @@ X='\033[0m'
 sep() { echo -e "${C}------------------------------------------${X}"; }
 section_head() { echo -e "\n${B}${C}  $1${X}"; sep; }
 
+_SPIN_PID=""
+_start_spin() {
+    [ -t 2 ] || return 0
+    local chars='|/-\' i=0
+    while true; do
+        printf "\r  \033[0;36mReviewing... %s\033[0m" "${chars:$((i % 4)):1}" >&2
+        i=$((i + 1))
+        sleep 0.12
+    done &
+    _SPIN_PID=$!
+}
+_stop_spin() {
+    [ -n "$_SPIN_PID" ] || return 0
+    kill "$_SPIN_PID" 2>/dev/null || true
+    wait "$_SPIN_PID" 2>/dev/null || true
+    printf "\r%-40s\r" "" >&2
+    _SPIN_PID=""
+}
+
 echo -e "\n${B}${C}PR REVIEW SYSTEM${X}"
 echo -e "${C}branch:${X} $BRANCH ${C}base:${X} $BASE ${C}mode:${X} $MODE\n"
 
@@ -159,7 +178,9 @@ if ! command -v claude >/dev/null 2>&1; then
     TOKENS_IN="?"
     TOKENS_OUT="?"
 else
-    RESULT="$(printf '%s' "$DIFF" | claude -p "$PROMPT" --output-format json --allowedTools none --model claude-haiku-4-5-20251001 2>&1 || true)"
+    _start_spin
+    RESULT="$(printf '%s' "$DIFF" | claude -p "$PROMPT" --output-format json --allowedTools none --model claude-haiku-4-5-20251001 2>/dev/null || true)"
+    _stop_spin
     REVIEW="$(echo "$RESULT" | json_field "result")"
     TOKENS_IN="$(echo "$RESULT" | json_field "usage.input_tokens")"
     TOKENS_OUT="$(echo "$RESULT" | json_field "usage.output_tokens")"
@@ -216,7 +237,7 @@ else
     echo -e "${G}Approved.${X}"
 fi
 
-if [ -t 2 ]; then
+if [ "$BLOCK" -eq 1 ] && [ -t 2 ]; then
     read -r -p "$(echo -e "Push anyway? [y/N] ")" _FORCE < /dev/tty || true
     if [[ "${_FORCE:-N}" =~ ^[yY] ]]; then
         echo -e "${Y}Force push confirmed — pushing.${X}"
