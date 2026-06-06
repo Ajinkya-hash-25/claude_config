@@ -178,9 +178,15 @@ if ! command -v claude >/dev/null 2>&1; then
     TOKENS_IN="?"
     TOKENS_OUT="?"
 else
+    _TMP_ERR="$(mktemp)"
     _start_spin
-    RESULT="$(printf '%s' "$DIFF" | claude -p "$PROMPT" --output-format json --allowedTools none --model claude-haiku-4-5-20251001 2>/dev/null || true)"
+    RESULT="$(claude -p "${PROMPT}"$'\n\n'"${DIFF}" --output-format json --allowedTools none --model claude-haiku-4-5-20251001 2>"$_TMP_ERR" || true)"
     _stop_spin
+    if [ -z "$RESULT" ] && [ -s "$_TMP_ERR" ]; then
+        echo -e "${R}Claude error:${X}" >&2
+        cat "$_TMP_ERR" >&2
+    fi
+    rm -f "$_TMP_ERR"
     REVIEW="$(echo "$RESULT" | json_field "result")"
     TOKENS_IN="$(echo "$RESULT" | json_field "usage.input_tokens")"
     TOKENS_OUT="$(echo "$RESULT" | json_field "usage.output_tokens")"
@@ -188,6 +194,7 @@ else
     TOKENS_OUT="${TOKENS_OUT:-?}"
 fi
 
+section_head "REVIEW RESULT"
 echo -e "$REVIEW"
 echo -e "${C}Tokens - in: ${TOKENS_IN} out: ${TOKENS_OUT}${X}"
 sep
