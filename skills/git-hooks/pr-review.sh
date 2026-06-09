@@ -4,10 +4,15 @@
 #   PR_REVIEW_MODE=block  hard-block on bugs/high risk/no verdict (default)
 #   PR_REVIEW_MODE=warn   never block; print findings
 #   PR_REVIEW_MODE=off    skip review
+# Providers:
+#   PR_REVIEW_LLM=auto    use codex if installed, else claude (default)
+#   PR_REVIEW_LLM=codex   use Codex CLI
+#   PR_REVIEW_LLM=claude  use Claude CLI
 
 set -euo pipefail
 
 MODE="${PR_REVIEW_MODE:-block}"
+LLM="${PR_REVIEW_LLM:-auto}"
 MAX_DIFF_LINES="${PR_REVIEW_MAX_DIFF_LINES:-500}"
 MAX_FILES="${PR_REVIEW_MAX_FILES:-30}"
 CHANGES_FILE="${PR_REVIEW_LOG:-changes.md}"
@@ -72,6 +77,57 @@ for k in sys.argv[1].split("."):
 print("" if cur in ({}, None) else cur)' "$1" 2>/dev/null || true
 }
 
+pick_llm() {
+    case "${1:-auto}" in
+        auto)
+            if command -v codex >/dev/null 2>&1; then
+                echo "codex"
+                return
+            fi
+            if command -v claude >/dev/null 2>&1; then
+                echo "claude"
+                return
+            fi
+            echo "none"
+            ;;
+        codex|claude)
+            if command -v "$1" >/dev/null 2>&1; then
+                echo "$1"
+            else
+                echo "none"
+            fi
+            ;;
+        *)
+            echo "invalid"
+            ;;
+    esac
+}
+
+run_review() {
+    local provider="$1"
+    local prompt="$2"
+    local diff="$3"
+    local tmp_err
+    tmp_err="$(mktemp)"
+
+    _start_spin
+    case "$provider" in
+        codex)
+            RESULT="$(printf '%s\n\n%s' "$prompt" "$diff" | codex exec --sandbox read-only - 2>"$tmp_err" || true)"
+            ;;
+        claude)
+            RESULT="$(claude -p "${prompt}"$'\n\n'"${diff}" --output-format json --allowedTools none --model claude-haiku-4-5-20251001 2>"$tmp_err" || true)"
+            ;;
+    esac
+    _stop_spin
+
+    if [ -z "$RESULT" ] && [ -s "$tmp_err" ]; then
+        echo -e "${R}${provider} error:${X}" >&2
+        cat "$tmp_err" >&2
+    fi
+    rm -f "$tmp_err"
+}
+
 BASE="$(pick_base "${1:-}")"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
@@ -104,8 +160,14 @@ _stop_spin() {
     _SPIN_PID=""
 }
 
+PROVIDER="$(pick_llm "$LLM")"
+if [ "$PROVIDER" = "invalid" ]; then
+    echo -e "${R}Invalid PR_REVIEW_LLM=$LLM. Use auto, codex, or claude.${X}"
+    exit 1
+fi
+
 echo -e "\n${B}${C}PR REVIEW SYSTEM${X}"
-echo -e "${C}branch:${X} $BRANCH ${C}base:${X} $BASE ${C}mode:${X} $MODE\n"
+echo -e "${C}branch:${X} $BRANCH ${C}base:${X} $BASE ${C}mode:${X} $MODE ${C}llm:${X} $LLM\n"
 
 CHANGED="$(git diff "$BASE"...HEAD --name-only --diff-filter=ACMRT 2>/dev/null || true)"
 if [ "$CHANGED" = "" ]; then
@@ -151,7 +213,7 @@ fi
 
 BLOCK=0
 
-section_head "CLAUDE REVIEW"
+section_head "$(echo "$PROVIDER" | tr '[:lower:]' '[:upper:]') REVIEW"
 
 DIFF="$(
     git diff "$BASE"...HEAD --no-ext-diff --unified=3 -- $CHANGED 2>/dev/null \
@@ -172,24 +234,23 @@ Else output findings then exactly: REQUEST CHANGES
 PROMPTEOF
 )"
 
-if ! command -v claude >/dev/null 2>&1; then
-    echo -e "${Y}claude CLI not found; skipping AI review.${X}"
-    REVIEW="REQUEST CHANGES - claude CLI missing; review skipped."
+RESULT=""
+TOKENS_IN="?"
+TOKENS_OUT="?"
+if [ "$PROVIDER" = "none" ]; then
+    echo -e "${Y}No supported LLM CLI found; install codex or claude, or set PR_REVIEW_LLM.${X}"
+    REVIEW="REQUEST CHANGES - no supported LLM CLI found; review skipped."
     TOKENS_IN="?"
     TOKENS_OUT="?"
 else
-    _TMP_ERR="$(mktemp)"
-    _start_spin
-    RESULT="$(claude -p "${PROMPT}"$'\n\n'"${DIFF}" --output-format json --allowedTools none --model claude-haiku-4-5-20251001 2>"$_TMP_ERR" || true)"
-    _stop_spin
-    if [ -z "$RESULT" ] && [ -s "$_TMP_ERR" ]; then
-        echo -e "${R}Claude error:${X}" >&2
-        cat "$_TMP_ERR" >&2
+    run_review "$PROVIDER" "$PROMPT" "$DIFF"
+    if [ "$PROVIDER" = "claude" ]; then
+        REVIEW="$(echo "$RESULT" | json_field "result")"
+        TOKENS_IN="$(echo "$RESULT" | json_field "usage.input_tokens")"
+        TOKENS_OUT="$(echo "$RESULT" | json_field "usage.output_tokens")"
+    else
+        REVIEW="$RESULT"
     fi
-    rm -f "$_TMP_ERR"
-    REVIEW="$(echo "$RESULT" | json_field "result")"
-    TOKENS_IN="$(echo "$RESULT" | json_field "usage.input_tokens")"
-    TOKENS_OUT="$(echo "$RESULT" | json_field "usage.output_tokens")"
     TOKENS_IN="${TOKENS_IN:-?}"
     TOKENS_OUT="${TOKENS_OUT:-?}"
 fi
@@ -206,6 +267,7 @@ cat >> "$CHANGES_FILE" <<MDEOF
 
 ## PR Review - $TIMESTAMP
 **Branch:** \`$BRANCH\` -> \`$BASE\`
+**LLM:** \`$PROVIDER\`
 **Tokens:** in=${TOKENS_IN} out=${TOKENS_OUT}
 
 ### Changed Files
@@ -229,7 +291,7 @@ if [ "$VERDICT" = "" ]; then
     echo -e "${R}No verdict detected.${X}"
     BLOCK=1
 elif echo "$VERDICT" | grep -qi '^REQUEST CHANGES'; then
-    echo -e "${Y}Claude requested changes.${X}"
+    echo -e "${Y}$PROVIDER requested changes.${X}"
     BLOCK=1
 fi
 
