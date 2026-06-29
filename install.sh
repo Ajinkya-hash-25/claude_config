@@ -55,7 +55,7 @@ force_symlink() {
         rm "$target"
     elif [ -e "$target" ]; then
         read -r -p "  ${Y}⚠${X} $label already exists. Overwrite? [y/N] " reply < /dev/tty || true
-        case "${reply:-N}" in
+        case "${reply:-N}" in   
             [yY]) mv "$target" "${target}.bak"
                   echo -e "  ${Y}↩${X} backed up existing → ${label}.bak" ;;
             *) echo -e "  ${Y}skip${X} $label — not modified"; return ;;
