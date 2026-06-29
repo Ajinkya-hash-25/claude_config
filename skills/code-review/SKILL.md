@@ -2,7 +2,7 @@
 name: code-review
 description: Structured code review for Java/Spring Boot, Go microservices, Cloud Functions, SQL, YAML, config files. Trigger on "review this", "review PR", "/code-review". Graph-first, terse output.
 ---
-new change
+
 Review changed code. Flag bugs, risks, nits. Findings first.
 Optional arg: base branch (default: upstream, `origin/main`, `origin/master`, then `HEAD~1`)
 
